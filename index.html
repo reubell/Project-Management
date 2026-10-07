@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project Tasks</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <h1>Projects</h1>
+      </div>
+      <ul class="project-list" id="projectList"></ul>
+      <form class="add-project" id="addProjectForm">
+        <input id="newProjectName" type="text" placeholder="+ New project" autocomplete="off" maxlength="80">
+      </form>
+      <div class="sidebar-foot">
+        <button type="button" class="link-btn" id="exportBtn">Back up</button>
+        <button type="button" class="link-btn" id="importBtn">Restore</button>
+        <input type="file" id="importFile" accept="application/json" hidden>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="main-head">
+        <button type="button" class="icon-btn menu-btn" id="menuBtn" aria-label="Show projects">☰</button>
+        <h2 id="projectTitle" title="Double-click to rename"></h2>
+        <button type="button" class="icon-btn" id="projectMenuBtn" aria-label="Project options">⋯</button>
+        <div class="dropdown" id="projectMenu" hidden>
+          <button type="button" data-action="rename">Rename project</button>
+          <button type="button" data-action="delete" class="danger">Delete project</button>
+        </div>
+      </header>
+
+      <section id="emptyState" class="empty" hidden>
+        <p>Create a project on the left to get started.</p>
+      </section>
+
+      <section id="projectView">
+        <form class="add-task" id="addTaskForm">
+          <span class="plus">+</span>
+          <input id="newTaskTitle" type="text" placeholder="Add a task and press Enter" autocomplete="off" maxlength="300">
+        </form>
+
+        <ul class="task-list" id="openList"></ul>
+        <p class="hint" id="openEmpty" hidden>No open tasks. Nice work.</p>
+
+        <button type="button" class="completed-toggle" id="completedToggle" aria-expanded="false">
+          <span class="chev">▸</span> Completed <span class="count" id="completedCount">0</span>
+        </button>
+        <ul class="task-list completed" id="completedList" hidden></ul>
+      </section>
+    </main>
+  </div>
+
+  <template id="taskTemplate">
+    <li class="task">
+      <div class="task-row">
+        <button type="button" class="check" aria-label="Toggle complete"></button>
+        <span class="task-title"></span>
+        <span class="file-badge" hidden></span>
+      </div>
+      <div class="task-details" hidden>
+        <input type="text" class="edit-title" maxlength="300" aria-label="Task title">
+        <textarea class="edit-notes" rows="3" placeholder="Notes"></textarea>
+        <ul class="files"></ul>
+        <div class="dropzone">
+          Drop files here or <button type="button" class="link-btn attach-btn">browse</button>
+          <input type="file" class="attach-input" multiple hidden>
+        </div>
+        <div class="details-actions">
+          <button type="button" class="link-btn danger delete-task">Delete task</button>
+        </div>
+      </div>
+    </li>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
