@@ -16,8 +16,16 @@ A simple, free task list organized by project. No account, no subscription, no b
 
 Open `index.html` in Chrome, Edge, Firefox or Safari. That's it.
 
-To use it from any device, turn on GitHub Pages for this repo
-(Settings → Pages → deploy from the `main` branch) and bookmark the URL.
+### Hosted on GitHub Pages
+
+1. The repo must be public for free GitHub Pages. Only the app's code becomes
+   visible; your tasks and files are never stored in the repo.
+   (Settings → General → Danger Zone → Change visibility → Public)
+2. Settings → Pages → Source: **Deploy from a branch** → pick
+   `claude/simple-task-list-app-wy4c55` and `/ (root)` → Save.
+3. After a minute the app is live at
+   **https://reubell.github.io/Project-Management/**. Bookmark it, or on a phone
+   use "Add to Home Screen".
 
 ## Where your data lives
 
