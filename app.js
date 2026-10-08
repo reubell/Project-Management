@@ -96,8 +96,7 @@ const state = {
   localBlobs: new Set(),
   downloading: new Set(),
   currentId: 'all', // the app always opens on All tasks
-  expanded: new Set(),  // tasks opened inline (phones, narrow windows)
-  selectedId: null,     // task shown in the side panel (wide screens)
+  selectedId: null, // the one open task: in the side panel on wide screens, under its row otherwise
   showCompleted: localStorage.getItem('showCompleted') === '1',
   dueFilter: localStorage.getItem('dueFilter') || '',
 };
@@ -115,7 +114,6 @@ function currentProject() {
 
 function setCurrent(id) {
   state.currentId = id;
-  state.expanded.clear();
   state.selectedId = null;
   setSidebar(false);
   render();
@@ -226,7 +224,6 @@ async function deleteTask(t) {
   const label = files.length ? ` and its ${files.length} file(s)` : '';
   if (!confirm(`Delete "${t.title}"${label}?`)) return;
   [t, ...files].forEach(r => { r.deleted = true; });
-  state.expanded.delete(t.id);
   if (state.selectedId === t.id) state.selectedId = null;
   render();
   await save([['tasks', t], ...files.map(f => ['files', f])]);
@@ -251,8 +248,7 @@ async function attachFiles(task, fileList) {
     state.files.push(f);
     added.push(['files', f]);
   }
-  if (wide.matches) state.selectedId = task.id;
-  else state.expanded.add(task.id);
+  state.selectedId = task.id;
   render();
   await save(added);
 }
@@ -605,7 +601,7 @@ function fillList(ul, tasks) {
 function taskEl(t) {
   const li = $('#taskTemplate').content.firstElementChild.cloneNode(true);
   const files = filesOf(t);
-  const open = wide.matches ? state.selectedId === t.id : state.expanded.has(t.id);
+  const open = state.selectedId === t.id;
 
   li.dataset.id = t.id;
   li.classList.toggle('done', !!t.done);
@@ -616,11 +612,9 @@ function taskEl(t) {
   titleEl.onclick = e => {
     e.stopPropagation();
     if (titleEl.isContentEditable) return;
-    if (wide.matches) state.selectedId = t.id;
-    else state.expanded.add(t.id);
-    render();
+    const shift = openAndShow(t);
     const fresh = document.querySelector(`.task[data-id="${t.id}"] .task-title`);
-    if (fresh) editTitle(fresh, t, e.clientX, e.clientY);
+    if (fresh) editTitle(fresh, t, e.clientX, e.clientY - shift);
   };
   const badge = li.querySelector('.file-badge');
   badge.hidden = files.length === 0 && !t.notes;
@@ -645,9 +639,12 @@ function taskEl(t) {
 
   li.querySelector('.check').onclick = e => { e.stopPropagation(); toggleTask(t); };
   li.querySelector('.task-row').onclick = () => {
-    if (wide.matches) state.selectedId = state.selectedId === t.id ? null : t.id;
-    else state.expanded.has(t.id) ? state.expanded.delete(t.id) : state.expanded.add(t.id);
-    render();
+    if (state.selectedId === t.id) {
+      state.selectedId = null;
+      render();
+    } else {
+      openAndShow(t);
+    }
   };
 
   // Drag the row onto a project in the sidebar to move it.
@@ -661,6 +658,17 @@ function taskEl(t) {
   acceptFileDrops(li, t);
   if (open && !wide.matches) li.appendChild(detailsEl(t));
   return li;
+}
+
+// Open a task (closing any other) and keep its row in view, since closing a
+// task above it moves it up. Returns how far the row moved on screen.
+function openAndShow(t) {
+  const rowTop = () => document.querySelector(`.task[data-id="${t.id}"]`)?.getBoundingClientRect().top ?? 0;
+  const before = rowTop();
+  state.selectedId = t.id;
+  render();
+  document.querySelector(`.task[data-id="${t.id}"]`)?.scrollIntoView({ block: 'nearest' });
+  return before - rowTop();
 }
 
 // Rename a task right on its row. Enter or clicking away saves; Escape cancels.
@@ -885,11 +893,7 @@ function wire() {
   });
 
   // Moving between side panel and inline details as the window is resized.
-  wide.addEventListener('change', () => {
-    if (wide.matches) state.selectedId = state.selectedId || [...state.expanded].pop() || null;
-    else if (state.selectedId) state.expanded.add(state.selectedId);
-    render();
-  });
+  wide.addEventListener('change', render);
 
   $('#exportBtn').onclick = exportBackup;
   $('#importBtn').onclick = () => $('#importFile').click();

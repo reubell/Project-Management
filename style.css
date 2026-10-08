@@ -156,7 +156,7 @@ input, textarea { font: inherit; color: inherit; }
 }
 .task.done .check { background: var(--accent); border-color: var(--accent); }
 .task.done .check::after { color: #fff; }
-.task-title { flex: 1; word-break: break-word; }
+.task-title { flex: 0 1 auto; margin-right: auto; word-break: break-word; }
 .task.done .task-title { color: var(--done); text-decoration: line-through; }
 .file-badge { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
