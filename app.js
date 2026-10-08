@@ -95,11 +95,14 @@ const state = {
   files: [],
   localBlobs: new Set(),
   downloading: new Set(),
-  currentId: localStorage.getItem('currentProject'),
+  currentId: 'all', // the app always opens on All tasks
   expanded: new Set(),
   showCompleted: localStorage.getItem('showCompleted') === '1',
+  dueFilter: localStorage.getItem('dueFilter') || '',
 };
 
+const ALL = 'all';
+const isAll = () => state.currentId === ALL;
 const live = r => !r.deleted;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const $ = sel => document.querySelector(sel);
@@ -110,10 +113,59 @@ function currentProject() {
 
 function setCurrent(id) {
   state.currentId = id;
-  localStorage.setItem('currentProject', id || '');
   state.expanded.clear();
-  $('#sidebar').classList.remove('open');
+  setSidebar(false);
   render();
+}
+
+// On phones the sidebar slides over the page; tapping outside it closes it.
+function setSidebar(open) {
+  $('#sidebar').classList.toggle('open', open);
+  $('#scrim').hidden = !open;
+}
+
+// ---------- Due dates (stored as local 'YYYY-MM-DD', or null for none) ----------
+
+function dayStr(offset = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function parseDay(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function dueLabel(due) {
+  const date = parseDay(due);
+  const diff = Math.round((date - parseDay(dayStr())) / 864e5);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
+  if (diff > 1 && diff < 7) return date.toLocaleDateString([], { weekday: 'long' });
+  const opts = { month: 'short', day: 'numeric' };
+  if (date.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return date.toLocaleDateString([], opts);
+}
+
+function matchesDueFilter(t) {
+  const today = dayStr();
+  switch (state.dueFilter) {
+    case 'overdue': return !!t.due && t.due < today;
+    case 'today': return !!t.due && t.due <= today;
+    case 'week': return !!t.due && t.due <= dayStr(7);
+    case 'dated': return !!t.due;
+    case 'none': return !t.due;
+    default: return true;
+  }
+}
+
+// Dated tasks first, soonest at the top; then undated tasks, oldest first.
+function byDue(a, b) {
+  if (a.due && b.due && a.due !== b.due) return a.due < b.due ? -1 : 1;
+  if (!!a.due !== !!b.due) return a.due ? -1 : 1;
+  return a.created - b.created;
 }
 
 // ---------- Projects ----------
@@ -121,8 +173,8 @@ function setCurrent(id) {
 async function addProject(name) {
   const p = { id: uid(), name, created: Date.now() };
   state.projects.push(p);
-  await save([['projects', p]]);
   setCurrent(p.id);
+  await save([['projects', p]]);
 }
 
 async function renameProject(p) {
@@ -141,13 +193,15 @@ async function deleteProject(p) {
   [p, ...tasks, ...files].forEach(r => { r.deleted = true; });
   await save([['projects', p], ...tasks.map(t => ['tasks', t]), ...files.map(f => ['files', f])]);
   await deleteBlobs(files.map(f => f.id));
-  setCurrent(state.projects.find(live)?.id || null);
+  setCurrent(ALL);
 }
 
 // ---------- Tasks ----------
 
 async function addTask(title) {
-  const t = { id: uid(), projectId: state.currentId, title, notes: '', done: false, created: Date.now() };
+  const projectId = isAll() ? $('#newTaskProject').value : state.currentId;
+  if (!projectId) return;
+  const t = { id: uid(), projectId, title, notes: '', done: false, due: null, created: Date.now() };
   state.tasks.push(t);
   render();
   await save([['tasks', t]]);
@@ -418,13 +472,19 @@ function requestRender() {
 
 function render() {
   renderPending = false;
-  if (!currentProject()) state.currentId = state.projects.find(live)?.id || null;
+  if (!isAll() && !currentProject()) state.currentId = ALL;
   renderProjects();
   renderTasks();
   renderSync();
 }
 
 function renderProjects() {
+  const projectIds = new Set(state.projects.filter(live).map(p => p.id));
+  const allOpen = state.tasks.filter(t => live(t) && !t.done && projectIds.has(t.projectId)).length;
+  const allNav = $('#allNav');
+  allNav.className = isAll() ? 'active' : '';
+  allNav.querySelector('.count').textContent = allOpen || '';
+
   const list = $('#projectList');
   list.innerHTML = '';
   for (const p of state.projects.filter(live).sort((a, b) => a.created - b.created)) {
@@ -453,21 +513,40 @@ function renderProjects() {
 }
 
 function renderTasks() {
+  const all = isAll();
   const p = currentProject();
-  $('#emptyState').hidden = !!p;
-  $('#projectView').hidden = !p;
-  $('#projectTitle').textContent = p ? p.name : '';
-  $('#projectMenuBtn').hidden = !p;
-  document.title = p ? `${p.name} · Project Tasks` : 'Project Tasks';
-  if (!p) return;
+  const projects = state.projects.filter(live).sort((a, b) => a.created - b.created);
+  const projectIds = new Set(projects.map(x => x.id));
+  const title = all ? 'All tasks' : p.name;
 
-  const tasks = state.tasks.filter(t => t.projectId === p.id && live(t));
-  const open = tasks.filter(t => !t.done).sort((a, b) => a.created - b.created);
+  $('#emptyState').hidden = projects.length > 0;
+  $('#projectView').hidden = projects.length === 0;
+  $('#projectTitle').textContent = title;
+  $('#projectTitle').title = all ? '' : 'Double-click to rename';
+  $('#projectMenuBtn').hidden = all;
+  $('#dueFilter').value = state.dueFilter;
+  $('#dueFilter').classList.toggle('active', !!state.dueFilter);
+  document.title = `${title} · Project Tasks`;
+  if (!projects.length) return;
+
+  // In All tasks, new tasks need a project picked.
+  const picker = $('#newTaskProject');
+  picker.hidden = !all;
+  if (all) {
+    const chosen = picker.value || localStorage.getItem('newTaskProject');
+    picker.innerHTML = '';
+    projects.forEach(x => picker.add(new Option(x.name, x.id)));
+    picker.value = projectIds.has(chosen) ? chosen : projects[0].id;
+  }
+
+  const tasks = state.tasks.filter(t => live(t) && (all ? projectIds.has(t.projectId) : t.projectId === p.id) && matchesDueFilter(t));
+  const open = tasks.filter(t => !t.done).sort(byDue);
   const done = tasks.filter(t => t.done).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
 
   fillList($('#openList'), open);
   fillList($('#completedList'), done);
   $('#openEmpty').hidden = open.length > 0;
+  $('#openEmpty').textContent = state.dueFilter ? 'No open tasks match this due date filter.' : 'No open tasks. Nice work.';
   $('#completedCount').textContent = done.length;
   $('#completedToggle').hidden = done.length === 0;
   $('#completedToggle').setAttribute('aria-expanded', state.showCompleted);
@@ -489,6 +568,23 @@ function taskEl(t) {
   const badge = li.querySelector('.file-badge');
   badge.hidden = files.length === 0 && !t.notes;
   badge.textContent = [t.notes ? '✎' : '', files.length ? `📎 ${files.length}` : ''].filter(Boolean).join('  ');
+
+  const due = li.querySelector('.due');
+  if (t.due) {
+    due.hidden = false;
+    due.textContent = dueLabel(t.due);
+    due.title = parseDay(t.due).toLocaleDateString([], { dateStyle: 'full' });
+    if (!t.done) due.classList.toggle('overdue', t.due < dayStr());
+    if (!t.done) due.classList.toggle('today', t.due === dayStr());
+  }
+
+  if (isAll()) {
+    const tag = li.querySelector('.project-tag');
+    tag.hidden = false;
+    tag.textContent = state.projects.find(x => x.id === t.projectId)?.name || '';
+    tag.title = 'Open project';
+    tag.onclick = e => { e.stopPropagation(); setCurrent(t.projectId); };
+  }
 
   li.querySelector('.check').onclick = e => { e.stopPropagation(); toggleTask(t); };
   li.querySelector('.task-row').onclick = () => {
@@ -530,6 +626,22 @@ function taskEl(t) {
       saveTask(t);
     };
     title.onkeydown = e => { if (e.key === 'Enter') title.blur(); };
+
+    const dueInput = li.querySelector('.edit-due');
+    const clearDue = li.querySelector('.clear-due');
+    dueInput.value = t.due || '';
+    clearDue.hidden = !t.due;
+    dueInput.onchange = () => {
+      t.due = dueInput.value || null;
+      clearDue.hidden = !t.due;
+      saveTask(t);
+      requestRender();
+    };
+    clearDue.onclick = () => {
+      t.due = null;
+      saveTask(t);
+      render();
+    };
 
     const notes = li.querySelector('.edit-notes');
     notes.value = t.notes || '';
@@ -607,7 +719,7 @@ async function importBackup(file) {
     ...data.files.map(r => ['files', r]),
   ]);
   await load();
-  setCurrent(data.projects[0]?.id || state.currentId);
+  setCurrent(ALL);
 }
 
 // ---------- Wiring ----------
@@ -653,7 +765,17 @@ function wire() {
   };
   $('#projectTitle').ondblclick = () => currentProject() && renameProject(currentProject());
 
-  $('#menuBtn').onclick = () => $('#sidebar').classList.toggle('open');
+  $('#allNav').onclick = () => setCurrent(ALL);
+  $('#newTaskProject').onchange = e => localStorage.setItem('newTaskProject', e.target.value);
+  $('#dueFilter').onchange = e => {
+    state.dueFilter = e.target.value;
+    localStorage.setItem('dueFilter', state.dueFilter);
+    render();
+  };
+
+  $('#menuBtn').onclick = () => setSidebar(!$('#sidebar').classList.contains('open'));
+  $('#scrim').onclick = () => setSidebar(false);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') setSidebar(false); });
 
   $('#exportBtn').onclick = exportBackup;
   $('#importBtn').onclick = () => $('#importFile').click();

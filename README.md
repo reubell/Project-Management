@@ -4,7 +4,10 @@ A simple, free task list organized by project. No account, no subscription, no b
 
 ## Features
 
+- **All tasks** view (the default) shows every project's tasks, each labeled with its project
 - **Projects** in the sidebar, with a count of open tasks
+- **Due dates** are optional. Open a task to set one. Overdue dates show in red
+- **Due date filter** at the top (overdue, today, next 7 days, and more) works on every view
 - **Tasks** are either open or completed. Completed tasks fold into a section at the bottom
 - **Files**: drag files from your computer onto any task, or click a task and use *browse*
 - **Notes** on each task (click the task to open it)
