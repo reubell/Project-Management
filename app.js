@@ -472,6 +472,7 @@ function syncAction() {
 let renderPending = false;
 // The side panel stays put while the list around it updates.
 function requestRender() {
+  if (pointerHeld) { renderPending = true; return; }
   if (document.activeElement?.matches?.('.task-title')) { renderPending = true; return; }
   const typingIn = document.activeElement?.closest?.('.task-details');
   if (!typingIn) return render();
@@ -484,7 +485,12 @@ function requestRender() {
   }
 }
 
+// Redrawing between a mouse press and its release would swap out the element
+// being clicked and swallow the click, so redraws wait until the press ends.
+let pointerHeld = false;
+
 function render() {
+  if (pointerHeld) { renderPending = true; return; }
   renderPending = false;
   if (!isAll() && !currentProject()) state.currentId = ALL;
   renderProjects();
@@ -898,6 +904,13 @@ function wire() {
 
   // Catch up on a render that waited for the user to finish typing.
   document.addEventListener('focusout', () => setTimeout(() => { if (renderPending) requestRender(); }));
+  document.addEventListener('pointerdown', () => { pointerHeld = true; }, true);
+  for (const type of ['pointerup', 'pointercancel', 'dragend']) {
+    document.addEventListener(type, () => {
+      pointerHeld = false;
+      setTimeout(() => { if (renderPending) requestRender(); }); // after the click is handled
+    }, true);
+  }
 
   // Pull changes from other devices while the app is open or brought back.
   setInterval(() => { if (document.visibilityState === 'visible') runSync(); }, 60_000);
