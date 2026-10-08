@@ -10,7 +10,9 @@ A simple, free task list organized by project. No account, no subscription, no b
 - **Due date filter** at the top (overdue, today, next 7 days, and more) works on every view
 - **Tasks** are either open or completed. Completed tasks fold into a section at the bottom
 - **Files**: drag files from your computer onto any task, or click a task and use *browse*
-- **Notes** on each task (click the task to open it)
+- **Notes** on each task. Click a task to open it: on a big screen its details open
+  in a panel on the right, on a phone right under the task
+- **Rename** a task by clicking its name
 - **Move a task** to another project by dragging it onto that project in the sidebar
 - **Google Drive sync**: tasks and files back up automatically and show up on
   every phone and computer you connect

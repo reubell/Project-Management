@@ -96,12 +96,14 @@ const state = {
   localBlobs: new Set(),
   downloading: new Set(),
   currentId: 'all', // the app always opens on All tasks
-  expanded: new Set(),
+  expanded: new Set(),  // tasks opened inline (phones, narrow windows)
+  selectedId: null,     // task shown in the side panel (wide screens)
   showCompleted: localStorage.getItem('showCompleted') === '1',
   dueFilter: localStorage.getItem('dueFilter') || '',
 };
 
 const ALL = 'all';
+const wide = matchMedia('(min-width: 1100px)');
 const isAll = () => state.currentId === ALL;
 const live = r => !r.deleted;
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -114,6 +116,7 @@ function currentProject() {
 function setCurrent(id) {
   state.currentId = id;
   state.expanded.clear();
+  state.selectedId = null;
   setSidebar(false);
   render();
 }
@@ -224,6 +227,7 @@ async function deleteTask(t) {
   if (!confirm(`Delete "${t.title}"${label}?`)) return;
   [t, ...files].forEach(r => { r.deleted = true; });
   state.expanded.delete(t.id);
+  if (state.selectedId === t.id) state.selectedId = null;
   render();
   await save([['tasks', t], ...files.map(f => ['files', f])]);
   await deleteBlobs(files.map(f => f.id));
@@ -247,7 +251,8 @@ async function attachFiles(task, fileList) {
     state.files.push(f);
     added.push(['files', f]);
   }
-  state.expanded.add(task.id);
+  if (wide.matches) state.selectedId = task.id;
+  else state.expanded.add(task.id);
   render();
   await save(added);
 }
@@ -465,9 +470,18 @@ function syncAction() {
 
 // Re-rendering replaces the task details, so wait while the user is typing there.
 let renderPending = false;
+// The side panel stays put while the list around it updates.
 function requestRender() {
-  if (document.activeElement?.closest?.('.task-details')) renderPending = true;
-  else render();
+  if (document.activeElement?.matches?.('.task-title')) { renderPending = true; return; }
+  const typingIn = document.activeElement?.closest?.('.task-details');
+  if (!typingIn) return render();
+  if (typingIn.closest('#detailPanel')) {
+    renderProjects();
+    renderTasks();
+    renderSync();
+  } else {
+    renderPending = true;
+  }
 }
 
 function render() {
@@ -475,6 +489,7 @@ function render() {
   if (!isAll() && !currentProject()) state.currentId = ALL;
   renderProjects();
   renderTasks();
+  renderPanel();
   renderSync();
 }
 
@@ -553,6 +568,29 @@ function renderTasks() {
   $('#completedList').hidden = !state.showCompleted;
 }
 
+function renderPanel() {
+  const panel = $('#detailPanel');
+  panel.hidden = !wide.matches;
+  panel.innerHTML = '';
+  if (!wide.matches) return;
+
+  const t = state.tasks.find(x => x.id === state.selectedId && live(x));
+  if (!t) {
+    panel.innerHTML = '<p class="panel-empty">Click a task to see its notes, due date and files.</p>';
+    return;
+  }
+
+  const head = document.createElement('div');
+  head.className = 'panel-head';
+  head.innerHTML = '<button type="button" class="link-btn project-link"></button><button type="button" class="icon-btn close" aria-label="Close">×</button>';
+  const projectLink = head.querySelector('.project-link');
+  projectLink.textContent = state.projects.find(x => x.id === t.projectId)?.name || '';
+  projectLink.onclick = () => { const id = t.id; setCurrent(t.projectId); state.selectedId = id; render(); };
+  head.querySelector('.close').onclick = () => { state.selectedId = null; render(); };
+  panel.append(head, detailsEl(t));
+  acceptFileDrops(panel, t);
+}
+
 function fillList(ul, tasks) {
   ul.innerHTML = '';
   tasks.forEach(t => ul.appendChild(taskEl(t)));
@@ -560,11 +598,24 @@ function fillList(ul, tasks) {
 
 function taskEl(t) {
   const li = $('#taskTemplate').content.firstElementChild.cloneNode(true);
-  const files = state.files.filter(f => f.taskId === t.id && live(f)).sort((a, b) => a.added - b.added);
-  const expanded = state.expanded.has(t.id);
+  const files = filesOf(t);
+  const open = wide.matches ? state.selectedId === t.id : state.expanded.has(t.id);
 
+  li.dataset.id = t.id;
   li.classList.toggle('done', !!t.done);
-  li.querySelector('.task-title').textContent = t.title;
+  li.classList.toggle('selected', open && wide.matches);
+  const titleEl = li.querySelector('.task-title');
+  titleEl.textContent = t.title;
+  titleEl.title = 'Click to rename';
+  titleEl.onclick = e => {
+    e.stopPropagation();
+    if (titleEl.isContentEditable) return;
+    if (wide.matches) state.selectedId = t.id;
+    else state.expanded.add(t.id);
+    render();
+    const fresh = document.querySelector(`.task[data-id="${t.id}"] .task-title`);
+    if (fresh) editTitle(fresh, t, e.clientX, e.clientY);
+  };
   const badge = li.querySelector('.file-badge');
   badge.hidden = files.length === 0 && !t.notes;
   badge.textContent = [t.notes ? '✎' : '', files.length ? `📎 ${files.length}` : ''].filter(Boolean).join('  ');
@@ -588,7 +639,8 @@ function taskEl(t) {
 
   li.querySelector('.check').onclick = e => { e.stopPropagation(); toggleTask(t); };
   li.querySelector('.task-row').onclick = () => {
-    state.expanded.has(t.id) ? state.expanded.delete(t.id) : state.expanded.add(t.id);
+    if (wide.matches) state.selectedId = state.selectedId === t.id ? null : t.id;
+    else state.expanded.has(t.id) ? state.expanded.delete(t.id) : state.expanded.add(t.id);
     render();
   };
 
@@ -600,76 +652,121 @@ function taskEl(t) {
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  // Drop files anywhere on the task.
+  acceptFileDrops(li, t);
+  if (open && !wide.matches) li.appendChild(detailsEl(t));
+  return li;
+}
+
+// Rename a task right on its row. Enter or clicking away saves; Escape cancels.
+function editTitle(el, t, x, y) {
+  const row = el.closest('.task-row');
+  row.draggable = false;
+  try { el.contentEditable = 'plaintext-only'; } catch { el.contentEditable = 'true'; }
+  el.focus();
+  const sel = getSelection();
+  const range = document.caretRangeFromPoint?.(x, y);
+  if (range && el.contains(range.startContainer)) {
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } else {
+    sel.selectAllChildren(el);
+    sel.collapseToEnd();
+  }
+
+  let cancelled = false;
+  el.onkeydown = e => {
+    if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+    if (e.key === 'Escape') { e.stopPropagation(); cancelled = true; el.blur(); }
+  };
+  el.onblur = () => {
+    el.removeAttribute('contenteditable');
+    row.draggable = true;
+    const v = el.textContent.replace(/\s+/g, ' ').trim();
+    if (!cancelled && v && v !== t.title) {
+      t.title = v;
+      saveTask(t);
+    }
+    el.textContent = t.title;
+    requestRender();
+  };
+}
+
+function filesOf(t) {
+  return state.files.filter(f => f.taskId === t.id && live(f)).sort((a, b) => a.added - b.added);
+}
+
+// Files dropped anywhere on the element attach to the task.
+function acceptFileDrops(el, t) {
   let depth = 0;
-  li.ondragenter = e => { if (hasFiles(e)) { depth++; li.classList.add('drop-target'); } };
-  li.ondragleave = e => { if (hasFiles(e) && --depth <= 0) { depth = 0; li.classList.remove('drop-target'); } };
-  li.ondragover = e => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } };
-  li.ondrop = e => {
+  el.ondragenter = e => { if (hasFiles(e)) { depth++; el.classList.add('drop-target'); } };
+  el.ondragleave = e => { if (hasFiles(e) && --depth <= 0) { depth = 0; el.classList.remove('drop-target'); } };
+  el.ondragover = e => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } };
+  el.ondrop = e => {
     if (!hasFiles(e)) return;
     e.preventDefault();
     depth = 0;
-    li.classList.remove('drop-target');
+    el.classList.remove('drop-target');
     if (e.dataTransfer.files.length) attachFiles(t, e.dataTransfer.files);
   };
+}
 
-  const details = li.querySelector('.task-details');
-  details.hidden = !expanded;
-  if (expanded) {
-    const title = li.querySelector('.edit-title');
-    title.value = t.title;
-    title.onchange = () => {
-      const v = title.value.trim();
-      if (!v) { title.value = t.title; return; }
-      t.title = v;
-      li.querySelector('.task-title').textContent = v;
-      saveTask(t);
-    };
-    title.onkeydown = e => { if (e.key === 'Enter') title.blur(); };
+// Title, due date, notes, files and delete: shown under the task or in the side panel.
+function detailsEl(t) {
+  const el = $('#detailsTemplate').content.firstElementChild.cloneNode(true);
 
-    const dueInput = li.querySelector('.edit-due');
-    const clearDue = li.querySelector('.clear-due');
-    dueInput.value = t.due || '';
+  const title = el.querySelector('.edit-title');
+  title.value = t.title;
+  title.onchange = () => {
+    const v = title.value.trim();
+    if (!v) { title.value = t.title; return; }
+    t.title = v;
+    saveTask(t);
+    requestRender();
+  };
+  title.onkeydown = e => { if (e.key === 'Enter') title.blur(); };
+
+  const dueInput = el.querySelector('.edit-due');
+  const clearDue = el.querySelector('.clear-due');
+  dueInput.value = t.due || '';
+  clearDue.hidden = !t.due;
+  dueInput.onchange = () => {
+    t.due = dueInput.value || null;
     clearDue.hidden = !t.due;
-    dueInput.onchange = () => {
-      t.due = dueInput.value || null;
-      clearDue.hidden = !t.due;
-      saveTask(t);
-      requestRender();
-    };
-    clearDue.onclick = () => {
-      t.due = null;
-      saveTask(t);
-      render();
-    };
+    saveTask(t);
+    requestRender();
+  };
+  clearDue.onclick = () => {
+    t.due = null;
+    saveTask(t);
+    render();
+  };
 
-    const notes = li.querySelector('.edit-notes');
-    notes.value = t.notes || '';
-    notes.oninput = () => { t.notes = notes.value; saveTask(t); };
+  const notes = el.querySelector('.edit-notes');
+  notes.value = t.notes || '';
+  notes.oninput = () => { t.notes = notes.value; saveTask(t); };
 
-    const fileList = li.querySelector('.files');
-    for (const f of files) {
-      const item = document.createElement('li');
-      item.innerHTML = '<a href="#"></a><span class="size"></span><button type="button" class="remove" aria-label="Remove file">×</button>';
-      const link = item.querySelector('a');
-      link.textContent = f.name;
-      link.title = f.name;
-      link.onclick = e => { e.preventDefault(); openFile(f); };
-      let note = formatSize(f.size);
-      if (state.downloading.has(f.id)) note = 'downloading…';
-      else if (Drive.enabled && !f.driveId) note += ' · not backed up yet';
-      item.querySelector('.size').textContent = note;
-      item.querySelector('.remove').onclick = () => removeFile(f);
-      fileList.appendChild(item);
-    }
-
-    const input = li.querySelector('.attach-input');
-    li.querySelector('.attach-btn').onclick = () => input.click();
-    input.onchange = () => { if (input.files.length) attachFiles(t, input.files); };
-
-    li.querySelector('.delete-task').onclick = () => deleteTask(t);
+  const fileList = el.querySelector('.files');
+  for (const f of filesOf(t)) {
+    const item = document.createElement('li');
+    item.innerHTML = '<a href="#"></a><span class="size"></span><button type="button" class="remove" aria-label="Remove file">×</button>';
+    const link = item.querySelector('a');
+    link.textContent = f.name;
+    link.title = f.name;
+    link.onclick = e => { e.preventDefault(); openFile(f); };
+    let note = formatSize(f.size);
+    if (state.downloading.has(f.id)) note = 'downloading…';
+    else if (Drive.enabled && !f.driveId) note += ' · not backed up yet';
+    item.querySelector('.size').textContent = note;
+    item.querySelector('.remove').onclick = () => removeFile(f);
+    fileList.appendChild(item);
   }
-  return li;
+
+  const input = el.querySelector('.attach-input');
+  el.querySelector('.attach-btn').onclick = () => input.click();
+  input.onchange = () => { if (input.files.length) attachFiles(t, input.files); };
+
+  el.querySelector('.delete-task').onclick = () => deleteTask(t);
+  return el;
 }
 
 // ---------- Backup / restore (a file you keep yourself) ----------
@@ -775,7 +872,18 @@ function wire() {
 
   $('#menuBtn').onclick = () => setSidebar(!$('#sidebar').classList.contains('open'));
   $('#scrim').onclick = () => setSidebar(false);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') setSidebar(false); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    setSidebar(false);
+    if (state.selectedId && !document.activeElement?.closest?.('.task-details')) { state.selectedId = null; render(); }
+  });
+
+  // Moving between side panel and inline details as the window is resized.
+  wide.addEventListener('change', () => {
+    if (wide.matches) state.selectedId = state.selectedId || [...state.expanded].pop() || null;
+    else if (state.selectedId) state.expanded.add(state.selectedId);
+    render();
+  });
 
   $('#exportBtn').onclick = exportBackup;
   $('#importBtn').onclick = () => $('#importFile').click();

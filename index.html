@@ -31,48 +31,53 @@
     <div class="scrim" id="scrim" hidden></div>
 
     <main class="main">
-      <header class="main-head">
-        <button type="button" class="icon-btn menu-btn" id="menuBtn" aria-label="Show projects">☰</button>
-        <h2 id="projectTitle"></h2>
-        <select id="dueFilter" class="due-filter" aria-label="Filter by due date">
-          <option value="">Any due date</option>
-          <option value="overdue">Overdue</option>
-          <option value="today">Today &amp; overdue</option>
-          <option value="week">Next 7 days</option>
-          <option value="dated">Has a due date</option>
-          <option value="none">No due date</option>
-        </select>
-        <button type="button" class="icon-btn" id="projectMenuBtn" aria-label="Project options">⋯</button>
-        <div class="dropdown" id="projectMenu" hidden>
-          <button type="button" data-action="rename">Rename project</button>
-          <button type="button" data-action="delete" class="danger">Delete project</button>
-        </div>
-      </header>
+      <div class="content">
+        <header class="main-head">
+          <button type="button" class="icon-btn menu-btn" id="menuBtn" aria-label="Show projects">☰</button>
+          <h2 id="projectTitle"></h2>
+          <select id="dueFilter" class="due-filter" aria-label="Filter by due date">
+            <option value="">Any due date</option>
+            <option value="overdue">Overdue</option>
+            <option value="today">Today &amp; overdue</option>
+            <option value="week">Next 7 days</option>
+            <option value="dated">Has a due date</option>
+            <option value="none">No due date</option>
+          </select>
+          <button type="button" class="icon-btn" id="projectMenuBtn" aria-label="Project options">⋯</button>
+          <div class="dropdown" id="projectMenu" hidden>
+            <button type="button" data-action="rename">Rename project</button>
+            <button type="button" data-action="delete" class="danger">Delete project</button>
+          </div>
+        </header>
 
-      <div class="banner" id="syncBanner" hidden>
-        <span class="text"></span>
-        <button type="button"></button>
+        <div class="banner" id="syncBanner" hidden>
+          <span class="text"></span>
+          <button type="button"></button>
+        </div>
+
+        <section id="emptyState" class="empty" hidden>
+          <p>Add a project under <strong>Projects</strong> to get started.</p>
+        </section>
+
+        <section id="projectView">
+          <form class="add-task" id="addTaskForm">
+            <span class="plus">+</span>
+            <input id="newTaskTitle" type="text" placeholder="Add a task and press Enter" autocomplete="off" maxlength="300">
+            <select id="newTaskProject" aria-label="Project for new task" hidden></select>
+          </form>
+
+          <ul class="task-list" id="openList"></ul>
+          <p class="hint" id="openEmpty" hidden></p>
+
+          <button type="button" class="completed-toggle" id="completedToggle" aria-expanded="false">
+            <span class="chev">▸</span> Completed <span class="count" id="completedCount">0</span>
+          </button>
+          <ul class="task-list completed" id="completedList" hidden></ul>
+        </section>
       </div>
 
-      <section id="emptyState" class="empty" hidden>
-        <p>Add a project under <strong>Projects</strong> to get started.</p>
-      </section>
-
-      <section id="projectView">
-        <form class="add-task" id="addTaskForm">
-          <span class="plus">+</span>
-          <input id="newTaskTitle" type="text" placeholder="Add a task and press Enter" autocomplete="off" maxlength="300">
-          <select id="newTaskProject" aria-label="Project for new task" hidden></select>
-        </form>
-
-        <ul class="task-list" id="openList"></ul>
-        <p class="hint" id="openEmpty" hidden></p>
-
-        <button type="button" class="completed-toggle" id="completedToggle" aria-expanded="false">
-          <span class="chev">▸</span> Completed <span class="count" id="completedCount">0</span>
-        </button>
-        <ul class="task-list completed" id="completedList" hidden></ul>
-      </section>
+      <!-- Wide screens: the selected task's details open here instead of under the task. -->
+      <aside class="detail-panel" id="detailPanel" hidden></aside>
     </main>
   </div>
 
@@ -85,23 +90,26 @@
         <span class="due" hidden></span>
         <span class="project-tag" hidden></span>
       </div>
-      <div class="task-details" hidden>
-        <input type="text" class="edit-title" maxlength="300" aria-label="Task title">
-        <div class="due-row">
-          <label>Due <input type="date" class="edit-due"></label>
-          <button type="button" class="link-btn clear-due" hidden>Remove due date</button>
-        </div>
-        <textarea class="edit-notes" rows="3" placeholder="Notes"></textarea>
-        <ul class="files"></ul>
-        <div class="dropzone">
-          Drop files here or <button type="button" class="link-btn attach-btn">browse</button>
-          <input type="file" class="attach-input" multiple hidden>
-        </div>
-        <div class="details-actions">
-          <button type="button" class="link-btn danger delete-task">Delete task</button>
-        </div>
-      </div>
     </li>
+  </template>
+
+  <template id="detailsTemplate">
+    <div class="task-details">
+      <input type="text" class="edit-title" maxlength="300" aria-label="Task title">
+      <div class="due-row">
+        <label>Due <input type="date" class="edit-due"></label>
+        <button type="button" class="link-btn clear-due" hidden>Remove due date</button>
+      </div>
+      <textarea class="edit-notes" rows="3" placeholder="Notes"></textarea>
+      <ul class="files"></ul>
+      <div class="dropzone">
+        Drop files here or <button type="button" class="link-btn attach-btn">browse</button>
+        <input type="file" class="attach-input" multiple hidden>
+      </div>
+      <div class="details-actions">
+        <button type="button" class="link-btn danger delete-task">Delete task</button>
+      </div>
+    </div>
   </template>
 
   <script src="config.js"></script>
